@@ -1,4 +1,4 @@
-# Simple Dotfiles Management Script
+# SDMS: Simple Dotfiles Management Script
 
 ## Usage
 

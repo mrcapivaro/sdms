@@ -2,30 +2,39 @@
 set -euo pipefail
 
 SDMS_HOME="${SDMS_HOME:-"$(dirname "$(readlink -f "$0")")"}"
-SDMS_SRC="${SDMS_SRC:-"$SDMS_HOME"/packages}"
+SDMS_SRC="${SDMS_SRC:-"$SDMS_HOME/packages"}"
 SDMS_DEST="${SDMS_DEST:-"$HOME"}"
 
-usage="Simple Dotfiles Management Script
+help() {
+    echo -e "Simple Dotfiles Management Script
 
 \e[33mUsage:\e[0m sdms [COMMAND] [OPTIONS] [ARGS]
 
 \e[33mCommands:\e[0m
-\t\e[32mnew (alias: n)\e[0m
-\t\tCreate a new package with the given name.
-\t\e[32maddto (alias: a)\e[0m
-\t\tAdd a given file to a given package.
-\t\e[32mrename (alias: rn)\e[0m
-\t\tRename a given file from a given package with the specified name.
-\t\e[32mlink (alias: l)\e[0m
- \t\tSymlink all the given package's files to target.
-
-See '\e[32msdms help <command>\e[0m' for more information on a specific command.
- I should not be touching the screen."
-
-help() {
-    while read -r line; do
-        echo -e "$line"
-    done <<<"$usage"
+  \e[32mnew (alias: n)\e[0m <package name>
+    Create a new package with the specified name.
+  \e[32mlink (alias: l)\e[0m <package name>
+    Link all files of the specified package that are under the 'pfx' folder.
+  \e[32munlink (alias: ul)\e[0m <package name>
+    Unlink all files of the specified package that are under the 'pfx' folder.
+  \e[32mrun-scripts (alias: r)\e[0m <package name>
+    Run all executable scripts under 'scripts' of the specified package.
+  \e[32mgo (alias: g)\e[0m <package name>
+    Create a new subshell inside the root directory of the specified package.
+  \e[32mlink-file (alias: lf)\e[0m <file>
+    Create a relative symbolic link of a package's prefix file inside the
+    directory specified by 'SDMS_DEST' according to the relative directory
+    structure of the file.
+  \e[32munlink-file (alias: ulf)\e[0m <file>
+    Unlink a file that is part of a package. This file can be either the link
+    or the file that the symlink points to inside the package's 'pfx' folder.
+  \e[32maddto (alias: a)\e[0m <package name> <file>
+    Add a file to a package's 'pfx' folder.
+  \e[32mrename (alias: rn)\e[0m <file>
+    Rename a file that is part of a package's linked files. The file parameter
+    can be either the symlink in the destination or the file itself inside the
+    package's 'pfx' folder.
+"
 }
 
 error() {
@@ -95,9 +104,12 @@ link_package_file() {
 
     local filelink
     filelink="$SDMS_DEST/${pkgfile#*pfx/}"
-    [ -e "$filelink" ] && echo "'$filelink' already exists." && return
 
-    ln -srv "$pkgfile" "$filelink"
+    if [ -L "$filelink" ] && [ "$(readlink -f "$filelink")" == "$pkgfile" ]; then
+        ln -srvf "$pkgfile" "$filelink"
+    else
+        ln -srvb "$pkgfile" "$filelink"
+    fi
 }
 
 link_package() {
@@ -109,6 +121,7 @@ link_package() {
     fi
     for pkgname in "${pkgnames[@]}"; do
         local pkgpfx="$SDMS_SRC/$pkgname/pfx"
+        [ ! -d "$pkgpfx" ] && continue
         find "$pkgpfx" -type f -print0 | while IFS= read -d '' -r pkgfile; do
             link_package_file "$pkgfile"
         done
@@ -168,15 +181,20 @@ run_package_scripts() {
     fi
     for pkgname in "${pkgnames[@]}"; do
         [ -d "$SDMS_SRC/$pkgname" ] || error "'$pkgname' is not a package."
+        [ -d "$SDMS_SRC/$pkgname/scripts" ] || continue
         for file in "$SDMS_SRC/$pkgname"/scripts/*.sh; do
-            if [ -x "$file" ]; then "$file"; fi
+            if [ -x "$file" ]; then
+                "$file"
+            else
+                echo "Skipping '$file' because it is not executable."
+            fi
         done
     done
 }
 
 if [ $# -eq 0 ]; then
     help
-    exit 0
+    exit 1
 fi
 
 command="$1"
@@ -196,5 +214,5 @@ case "$command" in
     run-scripts | r) run_package_scripts "$@" ;;
     go | g) go_to_package_dir "$@" ;;
 
-    *) error "'$command' is not a command. Use 'sdms list' for a list of available commands." ;;
+    *) error "'$command' is not a command." ;;
 esac
